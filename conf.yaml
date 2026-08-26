@@ -10,7 +10,7 @@ debug: true
 #   article_count: 每个站点最多抓取的文章数量
 spider_settings:
   enable: true
-  json_url: "https://opn.ksah.cn/d/Quark/friends.json"
+  json_url: "https://op.ksah.cn/d/Quark/friends.json"
   article_count: 5
 
 # 代理配置
