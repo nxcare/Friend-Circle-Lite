@@ -10,7 +10,7 @@ debug: true
 #   article_count: 每个站点最多抓取的文章数量
 spider_settings:
   enable: true
-  json_url: "https://share.ksah.cn/api/download?path=aliyun%2F%E7%BD%91%E7%AB%99%E7%9B%B8%E5%85%B3%2Ffriends.json"
+  json_url: "https://share.ksah.cn/d/阿里云盘/网站相关/friends.json"
   article_count: 5
 
 # 代理配置
