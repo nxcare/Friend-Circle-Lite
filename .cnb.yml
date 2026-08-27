@@ -1,71 +1,103 @@
 main:
+  # ==========================================
+  # 触发器 1：当有代码推送到 main 分支时触发
+  # ==========================================
   push:
-    - name: 朋友圈 Lite 更新服务
+    # 🌟 使用 &fcl_pipeline 标记这段流水线的内容，后面可以直接引用
+    - &fcl_pipeline
+      name: 朋友圈 Lite 更新服务
       runner:
         cpus: 4
-      # 引入你的环境变量/密钥文件 (如果用 CNB 界面配置了环境变量，这段可省略)
       imports:
         - https://cnb.cool/ke2h/secret/-/blob/main/envs.yml
       docker:
-        # 🌟 优化1：直接使用 Python 3.12 原生镜像
         image: python:3.12
         volumes:
-          # 🌟 优化2：利用云原生缓存，pip 和 temp 目录跨任务自动继承，省去繁琐的 Artifacts 上传/下载
           - /root/.cache/pip:copy-on-write
           - ./temp:copy-on-write
       env:
         TZ: Asia/Shanghai
-        PAGE_BRANCH: page
       stages:
-        - name: 安装依赖
-          script: |
-            python -m pip install --upgrade pip
-            pip install -r requirements.txt
-            
-        - name: 初始化 Temp 目录
-          script: |
-            mkdir -p ./temp
-            echo "placeholder" > ./temp/.keep
-            
-        - name: 检查 RSS 更新并生成内容
+        # 🔄 1. 同步仓库到 Github
+        - name: 同步到Github
+          image: tencentcom/git-sync
+          settings:
+            branch: main
+            auth_type: https
+            username: ${GIT_USERNAME}
+            password: ${GIT_ACCESS_TOKEN}
+            force: true
+            target_url: https://github.com/nxcare/friend-circle-lite.git
+
+        # ⏰ 2. 记录开始时间
+        - name: ⏰ 记录时间
+          script: echo -n $(date +%s)
+          exports:
+            info: CUSTOM_START_TIME
+
+        # ⚗️ 3. 数据处理 (安装依赖 + 拉取RSS + 组装静态资源)
+        - name: 📦 拉取数据并组装
           env:
-            # 你的环境变量，如果是从 imports 获取的，这里会自动读取
             SMTP_PWD: $SMTP_PWD
             PROXY_URL: $PROXY_URL
             FCL_REPO: $CNB_REPO_SLUG
           script: |
+            # 安装依赖
+            python -m pip install --upgrade pip
+            pip install -r requirements.txt
+            
+            # 初始化 Temp 目录
+            mkdir -p ./temp
+            echo "placeholder" > ./temp/.keep
+            
+            # 执行核心抓取脚本
             echo "Checking RSS feeds..."
             python run.py
-            ls ./temp
             
-        - name: 构建并发布到 Page 分支
-          script: |
-            # 1. 组装静态资源
-            mkdir pages
+            # 组装静态资源到 pages 目录
+            echo "组装静态资源..."
+            mkdir -p pages
             cp -r main ./static/edgeone.json ./static/_headers ./static/index.html ./static/readme.md ./static/favicon.ico ./static/bg-light.webp ./static/bg-dark.webp all.json link.json errors.json pages/ 2>/dev/null || true
             
-            # 2. 远端树哈希对比优化 (避免无改动时的无效提交)
-            REPO_URL="https://cnb:${CNB_TOKEN}@cnb.cool/${CNB_REPO_SLUG}.git"
-            published_tree=""
+        # 🚚 4. 部署到 EdgeOne Pages
+        - name: 🚚 部署到Pages
+          jobs:
+            - name: 推送静态网站
+              image: node:22
+              script: >-
+                npx edgeone@1.0.34 pages deploy ./pages -n
+                friend-circle -t $EDGEONE_PAGES_API_TOKEN
+                
+            - name: 导出当前时间
+              script: echo -n $(date +%s)
+              exports:
+                info: CUSTOM_PUSH_TIME
+                
+        # ⏱️ 5. 计算耗时
+        - name: ⏱️ 计算推送耗时
+          script: |
+            push_duration=$(($CUSTOM_PUSH_TIME - $CUSTOM_START_TIME))
+            minutes=$((push_duration / 60))
+            seconds=$((push_duration % 60))
+            time_str="${minutes}分${seconds}秒"
+            echo -n ${time_str}
+          exports:
+            info: CUSTOM_PUSH_DURATION
             
-            # 🌟 优化3：直接拉取远端目标分支，无需纠结本地 origin 配置
-            if git fetch $REPO_URL "${PAGE_BRANCH}"; then
-              published_tree=$(git rev-parse FETCH_HEAD^{tree})
-            fi
-            
-            # 3. 初始化并提交
-            cd pages
-            git init
-            git config user.name 'cnb-bot'
-            git config user.email 'cnb-bot@cnb.cool'
-            git add .
-            
-            generated_tree=$(git write-tree)
-            if [ -n "$published_tree" ] && [ "$generated_tree" = "$published_tree" ]; then
-              echo "没有发现静态资源的变动，跳过推送。"
-              exit 0
-            fi
-            
-            git commit -m "⏱️ $(date +"%Y年%m月%d日-%H时%M分") CNB自动定时更新"
-            # 🌟 优化4：使用原生 Token 强制覆盖推送
-            git push --force $REPO_URL HEAD:${PAGE_BRANCH}
+        # 📣 6. 钉钉播报结果
+        - name: 📣 钉钉通知
+          image: tencentcom/dingtalk-bot-msg:latest
+          settings:
+            content: '「朋友圈 Lite」更新发布完成，耗时: ${CUSTOM_PUSH_DURATION}'
+            c_type: text
+            secret: $SECRET
+            webhook: $WEBHOOK
+            isAtAll: false
+            debug: false
+
+  # ==========================================
+  # 触发器 2：定时任务触发（完全复用上面的逻辑）
+  # ==========================================
+  "crontab: 22 */4 * * *":
+    # 🌟 直接使用 *fcl_pipeline 引用上面的所有配置，省去大段重复代码！
+    - *fcl_pipeline
