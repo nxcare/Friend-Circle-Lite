@@ -101,5 +101,3 @@ main:
   "crontab: 22 */4 * * *":
     # 🌟 直接使用 *fcl_pipeline 引用上面的所有配置，省去大段重复代码！
     - *fcl_pipeline
-  "crontab: 10 13 * * *":
-    - *fcl_pipeline
