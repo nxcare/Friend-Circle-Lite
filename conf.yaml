@@ -10,7 +10,7 @@ debug: true
 #   article_count: 每个站点最多抓取的文章数量
 spider_settings:
   enable: true
-  json_url: "https://share.ksah.cn/d/阿里云盘/网站相关/friends.json"
+  json_url: "https://blog.ksah.cn/friends.json"
   article_count: 5
 
 # 代理配置
